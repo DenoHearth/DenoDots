@@ -1,10 +1,12 @@
--- The icon row. One slot per track: underneath, the "missing" picture (grey icon, red
--- frame); on top, Blizzard's aura container, which draws the live icon and its time while
--- the aura is up and nothing at all while it is not.
+-- The icon row. One slot per track. An aura slot has, underneath, the "missing" picture
+-- (grey icon, red frame) and on top Blizzard's aura container, which draws the live icon
+-- and its time while the aura is up and nothing at all while it is not. A reminder shows
+-- only the grey picture, a cooldown slot is an ordinary frame of our own.
 local ADDON, ns = ...
 
 local ICON, GAP = ns.ICON, ns.GAP
 local SLOT_KEY = "track"
+local GROUP_KEY = "gate"
 local slots = {}
 
 -- Time left: white, yellow under 5 seconds, red under 3. The client evaluates the curve.
@@ -143,51 +145,54 @@ function ns.LockHolder()
 end
 
 ------------------------------------------------------------------------------------------
--- Slots
+-- Slot parts
 ------------------------------------------------------------------------------------------
-local function FilterFor(unit)
-	-- on the target only what you cast; on yourself any copy of the buff counts
-	return unit == "player" and "HELPFUL" or "HARMFUL|PLAYER"
+local function GreyPicture(parent, anchor)
+	local frame = parent:CreateTexture(nil, "BACKGROUND")
+	frame:SetAllPoints(anchor)
+	frame:SetColorTexture(0.75, 0, 0, 1)
+	local icon = parent:CreateTexture(nil, "ARTWORK")
+	icon:SetPoint("TOPLEFT", anchor, "TOPLEFT", 2, -2)
+	icon:SetPoint("BOTTOMRIGHT", anchor, "BOTTOMRIGHT", -2, 2)
+	icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+	icon:SetDesaturated(true)
+	icon:SetVertexColor(0.5, 0.5, 0.5)
+	return icon
 end
 
-local function CreateSlot(index)
+local function CreateSlot()
 	local slot = CreateFrame("Frame", nil, ns.holder)
 	slot:SetSize(ICON, ICON)
-
-	local missing = CreateFrame("Frame", nil, slot)
-	missing:SetAllPoints()
-	slot.missing = missing
-	local frame = missing:CreateTexture(nil, "BACKGROUND")
-	frame:SetAllPoints()
-	frame:SetColorTexture(0.75, 0, 0, 1)
-	missing.icon = missing:CreateTexture(nil, "ARTWORK")
-	missing.icon:SetPoint("TOPLEFT", 2, -2)
-	missing.icon:SetPoint("BOTTOMRIGHT", -2, 2)
-	missing.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
-	missing.icon:SetDesaturated(true)
-	missing.icon:SetVertexColor(0.5, 0.5, 0.5)
+	slot.containers = {}      -- "timer" and "plain": the time text is fixed when a button is built
+	slot.missing = CreateFrame("Frame", nil, slot)
+	slot.missing:SetAllPoints()
+	slot.missing.icon = GreyPicture(slot.missing, slot.missing)
 	return slot
 end
 
--- The container is made once per slot, out of combat, and re-pointed afterwards.
-local function EnsureContainer(slot, unit, ids)
+-- The live icon. A container is made once per slot and variant, out of combat, and
+-- re-pointed afterwards.
+local function EnsureAura(slot, kind, ids, showTimer)
+	local key = showTimer and "timer" or "plain"
 	local filters = { includeSpellIDs = ids }
-	if slot.container then
-		for _, container in ipairs({ slot.container, slot.glow }) do
-			container:SetUnit(unit)
-			container:SetAuraSlotFilterString(SLOT_KEY, FilterFor(unit))
-			container:SetAuraSlotCandidateFilters(SLOT_KEY, filters)
-			container:SetAuraSlotEnabled(SLOT_KEY, true)
-		end
+	for other, container in pairs(slot.containers) do
+		if other ~= key then container:SetAuraSlotEnabled(SLOT_KEY, false) end
+	end
+	local container = slot.containers[key]
+	if container then
+		container:SetUnit(kind.unit)
+		container:SetAuraSlotFilterString(SLOT_KEY, kind.filter)
+		container:SetAuraSlotCandidateFilters(SLOT_KEY, filters)
+		container:SetAuraSlotEnabled(SLOT_KEY, true)
 		return
 	end
-	local container = CreateFrame("AuraContainer", nil, slot, "CustomAuraContainerTemplate")
-	slot.container = container
+	container = CreateFrame("AuraContainer", nil, slot, "CustomAuraContainerTemplate")
+	slot.containers[key] = container
 	container:SetPoint("CENTER")
 	container:SetSize(ICON, ICON)
 	container:SetFrameLevel(slot:GetFrameLevel() + 5)
-	container:SetUnit(unit)
-	container:AddAuraSlot(SLOT_KEY, FilterFor(unit), {
+	container:SetUnit(kind.unit)
+	container:AddAuraSlot(SLOT_KEY, kind.filter, {
 		candidateFilters = filters,
 		-- Every region is built and handed over here; the button is sealed afterwards.
 		initializeFrame = function(button)
@@ -204,27 +209,40 @@ local function EnsureContainer(slot, unit, ids)
 			local count = button:CreateFontString(nil, "OVERLAY", "NumberFontNormalSmall")
 			count:SetPoint("BOTTOMRIGHT", 2, -1)
 			button:SetApplicationCount(count)
-			local time = button:CreateFontString(nil, "OVERLAY", "NumberFontNormalLarge")
-			time:SetPoint("CENTER", 0, 0)
-			button:SetDurationText(time, {
-				textFormatter = timeFormat,
-				textColor = { curve = timeColor, property = Enum.DurationTextBindingProperty.RemainingDuration },
-			})
+			if showTimer then
+				local time = button:CreateFontString(nil, "OVERLAY", "NumberFontNormalLarge")
+				time:SetPoint("CENTER", 0, 0)
+				button:SetDurationText(time, {
+					textFormatter = timeFormat,
+					textColor = { curve = timeColor, property = Enum.DurationTextBindingProperty.RemainingDuration },
+				})
+			end
 		end,
 	})
 end
 
 -- The glow slot: same aura, nothing drawn but the glow text.
-local function EnsureGlow(slot, unit, ids)
-	if slot.glow or not glowFormat then return end
+local function EnsureGlow(slot, kind, ids, enabled)
+	if not enabled or not glowFormat then
+		if slot.glow then slot.glow:SetAuraSlotEnabled(SLOT_KEY, false) end
+		return
+	end
+	local filters = { includeSpellIDs = ids }
+	if slot.glow then
+		slot.glow:SetUnit(kind.unit)
+		slot.glow:SetAuraSlotFilterString(SLOT_KEY, kind.filter)
+		slot.glow:SetAuraSlotCandidateFilters(SLOT_KEY, filters)
+		slot.glow:SetAuraSlotEnabled(SLOT_KEY, true)
+		return
+	end
 	local glow = CreateFrame("AuraContainer", nil, slot, "CustomAuraContainerTemplate")
 	slot.glow = glow
 	glow:SetPoint("CENTER")
 	glow:SetSize(ICON, ICON)
 	glow:SetFrameLevel(slot:GetFrameLevel() + 10)
-	glow:SetUnit(unit)
-	glow:AddAuraSlot(SLOT_KEY, FilterFor(unit), {
-		candidateFilters = { includeSpellIDs = ids },
+	glow:SetUnit(kind.unit)
+	glow:AddAuraSlot(SLOT_KEY, kind.filter, {
+		candidateFilters = filters,
 		initializeFrame = function(button)
 			button:SetSize(ICON, ICON)
 			button:SetPoint("CENTER", glow, "CENTER")
@@ -235,18 +253,111 @@ local function EnsureGlow(slot, unit, ids)
 	})
 end
 
+-- "Only when missing": nothing while the aura is up, the grey picture while it is not.
+-- An aura slot cannot do that (its button would have to cover the picture with something),
+-- so this uses a group of at most one button that draws nothing. Blizzard sizes the
+-- container to 1 px while the aura is absent and to the button width while it is present,
+-- and a clipping frame from the container right edge to the slot right edge is therefore
+-- as wide as the slot when the aura is missing and zero wide when it is up. The grey
+-- picture lives inside that clip. Frames anchored to a container that owns a group have to
+-- come from DisableUntrustedLayoutScriptsTemplate.
+local function EnsureGate(slot, kind, ids)
+	local filters = { includeSpellIDs = ids }
+	if slot.gate then
+		slot.gate:SetUnit(kind.unit)
+		slot.gate:SetAuraGroupFilterString(GROUP_KEY, kind.filter)
+		slot.gate:SetAuraGroupCandidateFilters(GROUP_KEY, filters)
+		slot.gate:SetAuraGroupEnabled(GROUP_KEY, true)
+		return
+	end
+	local host = CreateFrame("Frame", nil, slot, "DisableUntrustedLayoutScriptsTemplate")
+	host:SetAllPoints(slot)
+	slot.gateHost = host
+	local gate = CreateFrame("AuraContainer", nil, host, "CustomAuraContainerTemplate")
+	slot.gate = gate
+	gate:SetPoint("TOPLEFT", host, "TOPLEFT")      -- one point only: Blizzard sets the size
+	gate:SetUnit(kind.unit)
+	gate:AddAuraGroup(GROUP_KEY, kind.filter, {
+		candidateFilters = filters,
+		maxFrameCount = 1,
+		layout = { elementWidth = ICON + 1, elementHeight = ICON },
+		initializeFrame = function(button) button:SetSize(ICON + 1, ICON) end,   -- draws nothing
+	})
+	local clip = CreateFrame("Frame", nil, host, "DisableUntrustedLayoutScriptsTemplate")
+	clip:SetClipsChildren(true)
+	clip:SetPoint("TOPLEFT", gate, "TOPRIGHT", -1, 0)
+	clip:SetPoint("BOTTOMRIGHT", host, "BOTTOMRIGHT")
+	slot.gateIcon = GreyPicture(clip, host)
+end
+
+-- A cooldown: our own frame, nothing sealed. The duration object goes straight from the
+-- API into the swipe and the text; it is never read.
+local function EnsureCooldown(slot, spellID, icon, showTimer)
+	local cool = slot.cool
+	if not cool then
+		cool = CreateFrame("Frame", nil, slot)
+		slot.cool = cool
+		cool:SetAllPoints()
+		local frame = cool:CreateTexture(nil, "BACKGROUND")
+		frame:SetAllPoints()
+		frame:SetColorTexture(0, 0, 0, 1)
+		cool.icon = cool:CreateTexture(nil, "ARTWORK")
+		cool.icon:SetPoint("TOPLEFT", 2, -2)
+		cool.icon:SetPoint("BOTTOMRIGHT", -2, 2)
+		cool.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+		cool.swipe = CreateFrame("Cooldown", nil, cool, "CooldownFrameTemplate")
+		cool.swipe:SetPoint("TOPLEFT", 2, -2)
+		cool.swipe:SetPoint("BOTTOMRIGHT", -2, 2)
+		cool.swipe:SetHideCountdownNumbers(true)
+		local textFrame = CreateFrame("Frame", nil, cool)
+		textFrame:SetAllPoints()
+		textFrame:SetFrameLevel(cool.swipe:GetFrameLevel() + 2)
+		cool.time = textFrame:CreateFontString(nil, "OVERLAY", "NumberFontNormalLarge")
+		cool.time:SetPoint("CENTER", 0, 0)
+		cool.binding = C_DurationUtil.CreateDurationTextBinding()
+		cool.binding:SetFormatter(timeFormat or C_StringUtil.CreateSecondsFormatter())
+		cool.binding:SetZeroDurationText("")
+		cool.binding:SetExpiredText("")
+		cool.binding:SetFontString(cool.time)
+	end
+	cool.spellID = spellID
+	cool.icon:SetTexture(icon)
+	cool.time:SetShown(showTimer)
+	cool.binding:SetEnabled(showTimer)
+end
+
+-- Switches off the parts of a slot that the other modes use.
+local function SetSlotMode(slot, mode)
+	if mode ~= "aura" then
+		for _, container in pairs(slot.containers) do container:SetAuraSlotEnabled(SLOT_KEY, false) end
+		if slot.glow then slot.glow:SetAuraSlotEnabled(SLOT_KEY, false) end
+	end
+	if slot.gate then slot.gate:SetAuraGroupEnabled(GROUP_KEY, mode == "gate") end
+	if slot.cool then slot.cool:SetShown(mode == "cooldown") end
+	slot.mode = mode
+end
+
+------------------------------------------------------------------------------------------
+-- The row
+------------------------------------------------------------------------------------------
 -- Tracks that are switched on and, unless marked "always", known to this character.
+-- Icons that are always there come first, reminders that only appear when something is
+-- missing go to the end: a hidden reminder then leaves no gap in the row.
 function ns.VisibleTracks()
-	local visible = {}
+	local visible, reminders = {}, {}
 	for _, track in ipairs(ns.tracks) do
-		if track.enabled ~= false and #visible < ns.MAX_TRACKS then
+		if track.enabled ~= false and #visible + #reminders < ns.MAX_TRACKS then
 			local ids, icon = ns.Resolve(track)
-			if next(ids) and (track.always or ns.IsKnown(ids)) then
-				visible[#visible + 1] = { track = track, ids = ids, icon = icon }
+			local known = ns.KnownSpell(ids)
+			if next(ids) and (track.always or known) then
+				local list = ns.OnlyWhenMissing(track) and reminders or visible
+				list[#list + 1] = { track = track, ids = ids, icon = icon, spellID = known or next(ids) }
 			end
 		end
 	end
-	return visible
+	local steady = #visible
+	for _, entry in ipairs(reminders) do visible[#visible + 1] = entry end
+	return visible, steady
 end
 
 function ns.BuildTracks()
@@ -257,42 +368,72 @@ function ns.BuildTracks()
 		end
 		return
 	end
-	local visible = ns.VisibleTracks()
+	local visible, steady = ns.VisibleTracks()
 	for index, entry in ipairs(visible) do
-		local slot = slots[index] or CreateSlot(index)
+		local slot = slots[index] or CreateSlot()
 		slots[index] = slot
-		slot.track = entry.track
+		local track = entry.track
+		local kind = ns.KINDS[track.kind]
+		slot.track = track
 		slot:ClearAllPoints()
 		slot:SetPoint("TOPLEFT", ns.holder, "TOPLEFT", (index - 1) * (ICON + GAP), 0)
 		slot.missing.icon:SetTexture(entry.icon)
-		EnsureGlow(slot, entry.track.unit, entry.ids)
-		EnsureContainer(slot, entry.track.unit, entry.ids)
+		if track.kind == "cooldown" then
+			EnsureCooldown(slot, entry.spellID, entry.icon, track.timer ~= false)
+			SetSlotMode(slot, "cooldown")
+		elseif kind.onlyWhenMissing then
+			EnsureGate(slot, kind, entry.ids)
+			slot.gateIcon:SetTexture(entry.icon)
+			SetSlotMode(slot, "gate")
+		else
+			EnsureAura(slot, kind, entry.ids, track.timer ~= false)
+			EnsureGlow(slot, kind, entry.ids, track.glow ~= false)
+			SetSlotMode(slot, "aura")
+		end
 		slot:Show()
 	end
 	for index = #visible + 1, #slots do
 		local slot = slots[index]
 		slot.track = nil
-		if slot.container then
-			slot.container:SetAuraSlotEnabled(SLOT_KEY, false)
-			if slot.glow then slot.glow:SetAuraSlotEnabled(SLOT_KEY, false) end
-		end
+		SetSlotMode(slot, "off")
 		slot:Hide()
 	end
-	-- the pet bars are exactly as wide as the icons; with no icon at all, three icons wide
-	ns.rowWidth = #visible > 0 and (#visible * (ICON + GAP) - GAP) or 98
+	-- the pet bars are exactly as wide as the icons that are always there (reminders at the
+	-- end do not stretch them); with no such icon, as wide as all of them or three icons
+	local wide = steady > 0 and steady or #visible
+	ns.rowWidth = wide > 0 and (wide * (ICON + GAP) - GAP) or 98
 	ns.holder:SetSize(ns.rowWidth, ICON + 14)
 end
 
--- The grey "missing" picture of a target track shows only while there is something to put
--- the effect on. Whether a target exists and can be attacked is plain data, also in combat.
-function ns.UpdateTarget()
-	local hostile = ns.Plain(UnitExists("target"), false) and ns.Plain(UnitCanAttack("player", "target"), false)
-		and not ns.Plain(UnitIsDead("target"), false)
+-- The grey "missing" picture shows only while there is something the effect could be on:
+-- an attackable target, the player, a pet. Whether those exist is plain data, also in combat.
+function ns.UpdateMarkers()
+	local present = {
+		player = true,
+		target = ns.Plain(UnitExists("target"), false) and ns.Plain(UnitCanAttack("player", "target"), false)
+			and not ns.Plain(UnitIsDead("target"), false),
+		pet = ns.Plain(UnitExists("pet"), false) and true or false,
+	}
 	for _, slot in ipairs(slots) do
 		local track = slot.track
 		if track then
-			local show = track.missing ~= false and (track.unit == "player" or hostile)
-			slot.missing:SetShown(show and true or false)
+			local kind = ns.KINDS[track.kind]
+			local there = kind.unit and present[kind.unit] and true or false
+			-- the plain picture under an aura slot, or the clipped one of a reminder
+			slot.missing:SetShown(slot.mode == "aura" and track.missing ~= false and there)
+			if slot.gateHost then slot.gateHost:SetShown(slot.mode == "gate" and there) end
+		end
+	end
+end
+
+function ns.UpdateCooldowns()
+	for _, slot in ipairs(slots) do
+		local cool = slot.cool
+		if slot.mode == "cooldown" and cool and cool.spellID then
+			-- true: leave the global cooldown off the icon
+			local duration = C_Spell.GetSpellCooldownDuration(cool.spellID, true)
+			cool.swipe:SetCooldownFromDurationObject(duration, true)
+			cool.binding:SetDuration(duration)
 		end
 	end
 end

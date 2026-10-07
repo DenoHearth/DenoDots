@@ -1,7 +1,7 @@
 -- Deno Dots for WoW: Forever (interface 16001).
--- A row of small icons above the player frame: your effects on the target and your own
--- buffs, each with its time left, and a red-framed grey icon where one is missing. Under
--- the row, pet health and mana.
+-- A row of small icons above the player frame: your effects on the target, buffs on you
+-- and your pet, reminders for buffs that are missing and cooldowns, each with its time
+-- left. Under the row, pet health and mana.
 --
 -- The addon never reads an aura. Blizzard's aura container fills an icon while the aura is
 -- up and hides it when it is not; the "missing" picture simply lies underneath.
@@ -12,20 +12,50 @@ ns.ICON = 30          -- icon size
 ns.GAP = 4            -- space between icons
 ns.MAX_TRACKS = 10
 
--- A track is one icon: the first aura found out of a list of spells, on one unit.
+-- What an icon watches and how it behaves. unit + filter go to the aura container.
+ns.KINDS = {
+	dot = { label = "DoT", unit = "target", filter = "HARMFUL|PLAYER", color = { 0.72, 0.42, 0.95 },
+		hint = "Your own effect on the target. Timer, glow when it runs out, grey when missing." },
+	debuff = { label = "Debuff", unit = "target", filter = "HARMFUL", color = { 0.95, 0.42, 0.36 },
+		hint = "The effect on the target, whoever cast it." },
+	buff = { label = "Buff", unit = "player", filter = "HELPFUL", color = { 0.36, 0.78, 0.44 },
+		hint = "A buff on you. Shown while it is up, grey when missing." },
+	reminder = { label = "Reminder", unit = "player", filter = "HELPFUL", color = { 0.96, 0.74, 0.28 },
+		onlyWhenMissing = true, hint = "A buff on you. No icon while it is up; a grey icon when it is missing." },
+	pet = { label = "Pet buff", unit = "pet", filter = "HELPFUL", color = { 0.38, 0.68, 0.96 },
+		hint = "A buff on your pet." },
+	cooldown = { label = "Cooldown", color = { 0.62, 0.66, 0.72 },
+		hint = "One of your spells: the time until it is ready again." },
+}
+ns.KIND_ORDER = { "dot", "debuff", "buff", "reminder", "pet", "cooldown" }
+
+-- Which switches a kind has in the editor.
+ns.KIND_SWITCHES = {
+	dot = { missing = true, glow = true, timer = true },
+	debuff = { missing = true, glow = true, timer = true },
+	buff = { missing = true, glow = true, timer = true },
+	reminder = {},
+	pet = { missing = true, glow = true, timer = true },
+	cooldown = { timer = true },
+}
+
+-- A track is one icon.
 --   label    shown in the editor
---   unit     "target" (your harmful effects on it) or "player" (your buffs)
---   spells   spell names (every rank is looked up in Data.lua) and/or spell ids
+--   kind     a key of ns.KINDS
+--   spells   spell names (every rank is looked up in Data.lua) and/or spell ids; the icon
+--            shows the first of them that is found
 --   missing  show the grey icon while none of the spells is up
+--   glow     proc glow in the last seconds
+--   timer    seconds left on the icon
 --   always   show the icon even when the character knows none of the spells
 local CLASS_DEFAULTS = {
 	WARLOCK = {
-		{ label = "Corruption", unit = "target", spells = { "corruption" } },
-		{ label = "Immolate", unit = "target", spells = { "immolate" } },
-		{ label = "Bane", unit = "target", spells = { "bane of agony", "bane of doom", "bane of havoc" } },
-		{ label = "Curse", unit = "target", spells = { "curse of the elements", "curse of weakness",
+		{ label = "Corruption", kind = "dot", spells = { "corruption" } },
+		{ label = "Immolate", kind = "dot", spells = { "immolate" } },
+		{ label = "Bane", kind = "dot", spells = { "bane of agony", "bane of doom", "bane of havoc" } },
+		{ label = "Curse", kind = "dot", spells = { "curse of the elements", "curse of weakness",
 			"curse of recklessness", "curse of tongues", "curse of exhaustion", "curse of idiocy" } },
-		{ label = "Armor", unit = "player", spells = { "demon skin", "demon armor", "fel armor" } },
+		{ label = "Armor", kind = "reminder", spells = { "demon skin", "demon armor", "fel armor" } },
 	},
 }
 
@@ -48,16 +78,41 @@ function ns.Plain(value, fallback)
 	return value
 end
 
-local function CopyTrack(track)
-	local copy = { label = track.label, unit = track.unit, spells = {}, enabled = track.enabled ~= false,
-		missing = track.missing ~= false, always = track.always == true }
-	for i, spell in ipairs(track.spells) do copy.spells[i] = spell end
-	return copy
+-- Fills in what a track does not say, and reads the fields of version 1.0.
+function ns.Normalize(track)
+	if not ns.KINDS[track.kind] then
+		if track.unit == "player" then
+			track.kind = track.hideWhenUp == false and "buff" or "reminder"
+		else
+			track.kind = "dot"
+		end
+	end
+	track.unit, track.hideWhenUp = nil, nil
+	local onTarget = track.kind == "dot" or track.kind == "debuff"
+	if track.enabled == nil then track.enabled = true end
+	if track.missing == nil then track.missing = true end
+	if track.glow == nil then track.glow = onTarget end
+	if track.timer == nil then track.timer = true end
+	track.spells = track.spells or {}
+	track.label = track.label or "?"
+	return track
+end
+
+function ns.NewTrack(label, kind, spells, always)
+	return ns.Normalize({ label = label, kind = kind, spells = spells, always = always or nil })
+end
+
+function ns.OnlyWhenMissing(track)
+	return ns.KINDS[track.kind].onlyWhenMissing == true
 end
 
 function ns.DefaultTracks()
 	local tracks = {}
-	for i, track in ipairs(CLASS_DEFAULTS[ns.class] or {}) do tracks[i] = CopyTrack(track) end
+	for i, track in ipairs(CLASS_DEFAULTS[ns.class] or {}) do
+		local spells = {}
+		for index, spell in ipairs(track.spells) do spells[index] = spell end
+		tracks[i] = ns.NewTrack(track.label, track.kind, spells)
+	end
 	return tracks
 end
 
@@ -86,11 +141,15 @@ function ns.Resolve(track)
 	return ids, icon or 134400
 end
 
-function ns.IsKnown(ids)
+-- One of the ids the character knows, or nil.
+function ns.KnownSpell(ids)
 	for id in pairs(ids) do
-		if C_SpellBook.IsSpellKnown(id) then return true end
+		if C_SpellBook.IsSpellKnown(id) then return id end
 	end
-	return false
+end
+
+function ns.IsKnown(ids)
+	return ns.KnownSpell(ids) ~= nil
 end
 
 ------------------------------------------------------------------------------------------
@@ -105,6 +164,7 @@ local function SelectClass()
 	ns.class = class
 	if not ns.db.classes[class] then ns.db.classes[class] = { tracks = ns.DefaultTracks() } end
 	ns.tracks = ns.db.classes[class].tracks
+	for _, track in ipairs(ns.tracks) do ns.Normalize(track) end
 end
 
 function ns.Refresh()
@@ -116,7 +176,8 @@ function ns.Refresh()
 	SelectClass()
 	ns.BuildTracks()
 	ns.LayoutPetBars()
-	ns.UpdateTarget()
+	ns.UpdateMarkers()
+	ns.UpdateCooldowns()
 end
 
 local events = CreateFrame("Frame")
@@ -132,11 +193,14 @@ events:SetScript("OnEvent", function(_, event)
 		ns.CreatePetBars()
 		ns.Refresh()
 		for _, name in ipairs({ "SPELLS_CHANGED", "PLAYER_REGEN_ENABLED", "PLAYER_REGEN_DISABLED",
-			"PLAYER_TARGET_CHANGED", "PLAYER_ENTERING_WORLD" }) do
+			"PLAYER_TARGET_CHANGED", "PLAYER_ENTERING_WORLD", "SPELL_UPDATE_COOLDOWN" }) do
 			events:RegisterEvent(name)
 		end
-	elseif event == "PLAYER_TARGET_CHANGED" then
-		ns.UpdateTarget()
+		events:RegisterUnitEvent("UNIT_PET", "player")
+	elseif event == "PLAYER_TARGET_CHANGED" or event == "UNIT_PET" then
+		ns.UpdateMarkers()
+	elseif event == "SPELL_UPDATE_COOLDOWN" then
+		ns.UpdateCooldowns()
 	elseif event == "PLAYER_REGEN_DISABLED" then
 		ns.LockHolder()
 		if ns.CloseEditor then ns.CloseEditor() end
