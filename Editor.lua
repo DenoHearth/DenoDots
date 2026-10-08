@@ -301,6 +301,7 @@ Update = function()
 	editor.petMana:Set(ns.db.petMana)
 	editor.numbers:Set(ns.db.numbers)
 	editor.move:Set(ns.unlocked)
+	editor.clickCast:Set(ns.db.clickCast)
 	editor.scaleText:SetText(string.format("%d%%", math.floor(ns.db.scale * 100 + 0.5)))
 	editor.glowText:SetText(ns.db.glowSeconds .. " s")
 end
@@ -504,6 +505,11 @@ local function CreateEditor()
 	end)
 	resetPosition:SetPoint("LEFT", editor.move, "RIGHT", 6, 0)
 	Tooltip(resetPosition, "Reset position", "Back above the player frame, at normal size.")
+	editor.clickCast = Switch(editor, "Click an icon to cast", 150, function(on) ns.db.clickCast = on; Changed() end)
+	editor.clickCast:SetPoint("LEFT", resetPosition, "RIGHT", 6, 0)
+	Tooltip(editor.clickCast, "Click to cast",
+		"A click on an icon casts its spell, also in combat. Handy for a buff that is missing. "
+		.. "Several spells in one icon: the best one you know.")
 	local resetList = Flat(editor, "Reset list to class defaults", 176, 20, function()
 		wipe(ns.tracks)
 		for i, track in ipairs(ns.DefaultTracks()) do ns.tracks[i] = track end

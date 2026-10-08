@@ -66,6 +66,7 @@ ns.defaults = {
 	petMana = true,
 	numbers = true,
 	glowSeconds = 3,      -- the glow and the red number start this many seconds before the end
+	clickCast = true,     -- a click on an icon casts its spell
 	classes = {},
 }
 
@@ -140,6 +141,28 @@ function ns.Resolve(track)
 		end
 	end
 	return ids, icon or 134400
+end
+
+-- The spell a click on the icon casts, by name (the game then takes the highest rank you
+-- know). Several spells in one icon: a buff or reminder takes the last one you know (Fel
+-- Armor before Demon Skin), an effect on the target the first (the list order is yours).
+function ns.CastName(track)
+	local kind = ns.KINDS[track.kind]
+	local first, last, step = 1, #track.spells, 1
+	if kind and kind.unit ~= "target" then first, last, step = #track.spells, 1, -1 end
+	for index = first, last, step do
+		local spell = track.spells[index]
+		if type(spell) == "number" then
+			if C_SpellBook.IsSpellKnown(spell) then return C_Spell.GetSpellName(spell) end
+		else
+			local family = ns.families[spell]
+			if family then
+				for rank = #family, 2, -1 do
+					if C_SpellBook.IsSpellKnown(family[rank]) then return C_Spell.GetSpellName(family[rank]) end
+				end
+			end
+		end
+	end
 end
 
 -- One of the ids the character knows, or nil.

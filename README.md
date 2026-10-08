@@ -20,6 +20,8 @@ World of Warcraft: Forever and its addon rules.
 - **Edited in game:** add any spell by name or id as "on target" or "my buff", switch
   icons on and off, change their order, remove them. A name covers every rank of the
   spell. Several spells in one icon mean "any of these" (one bane, one curse, one armor).
+- **Click to cast:** a click on an icon casts its spell, also in combat. Handy for a buff
+  that is missing.
 - **Per class:** each class keeps its own list. Warlocks start with Corruption, Immolate,
   Bane, Curse and Armor; other classes start empty.
 - An icon from the starting list shows once you have learned one of its spells.
@@ -83,4 +85,4 @@ What changed in each version: [CHANGELOG.md](CHANGELOG.md).
 
 ## License
 
-MIT — see [LICENSE](LICENSE).  Current version: 1.2.0.
+MIT — see [LICENSE](LICENSE).  Current version: 1.3.0.

@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.3.0 — 2026-10-08
+
+- Click an icon to cast its spell, also in combat; a new switch in the editor turns it off
+
 ## v1.2.0 — 2026-10-08
 
 - New editor look with clearer labels and tooltips; the glow start is a setting (default 3 seconds, 1 to 10); the row no longer lands on the player frame in the default layout

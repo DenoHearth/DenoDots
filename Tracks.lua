@@ -157,9 +157,19 @@ function ns.CreateHolder()
 	ns.PlaceHolder()
 end
 
+-- While the row is being dragged the cast buttons are out of the way. They are secure
+-- buttons, so they are only shown and hidden out of combat.
+local function ShowCastButtons(shown)
+	if InCombatLockdown() then return end
+	for _, slot in ipairs(slots) do
+		if slot.cast then slot.cast:SetShown(shown and slot.track ~= nil and slot.cast.spellName ~= nil) end
+	end
+end
+
 function ns.UnlockHolder()
 	if InCombatLockdown() then return end
 	ns.unlocked = true
+	ShowCastButtons(false)
 	ns.holder:EnableMouse(true)
 	ns.holder.handle:Show()
 	ns.holder.handleText:Show()
@@ -172,6 +182,7 @@ function ns.LockHolder()
 	ns.holder:EnableMouse(false)
 	ns.holder.handle:Hide()
 	ns.holder.handleText:Hide()
+	ShowCastButtons(ns.db.clickCast)
 end
 
 ------------------------------------------------------------------------------------------
@@ -357,6 +368,40 @@ local function EnsureCooldown(slot, spellID, icon, showTimer)
 end
 
 -- Switches off the parts of a slot that the other modes use.
+-- Click to cast: an invisible secure button over the icon. It is set up out of combat and
+-- then works in combat too. A reminder that only shows when missing keeps its button while
+-- the buff is up: the spot is empty, a click there simply casts the buff again.
+local function EnsureCast(slot, spellName)
+	local cast = slot.cast
+	if not ns.db.clickCast or not spellName then
+		if cast then
+			cast.spellName = nil
+			cast:Hide()
+		end
+		return
+	end
+	if not cast then
+		cast = CreateFrame("Button", nil, slot, "SecureActionButtonTemplate")
+		slot.cast = cast
+		cast:SetAllPoints()
+		cast:SetFrameLevel(slot:GetFrameLevel() + 20)
+		cast:RegisterForClicks("AnyDown", "AnyUp")
+		cast:SetAttribute("type", "spell")
+		local light = cast:CreateTexture(nil, "HIGHLIGHT")
+		light:SetAllPoints()
+		light:SetColorTexture(1, 1, 1, 0.18)
+		cast:SetScript("OnEnter", function(self)
+			GameTooltip:SetOwner(self, "ANCHOR_TOP")
+			GameTooltip:SetText("Click: " .. (self.spellName or ""), 1, 1, 1)
+			GameTooltip:Show()
+		end)
+		cast:SetScript("OnLeave", function() GameTooltip:Hide() end)
+	end
+	cast.spellName = spellName
+	cast:SetAttribute("spell", spellName)
+	cast:SetShown(not ns.unlocked)
+end
+
 local function SetSlotMode(slot, mode)
 	if mode ~= "aura" then
 		for _, container in pairs(slot.containers) do container:SetAuraSlotEnabled(SLOT_KEY, false) end
@@ -420,11 +465,13 @@ function ns.BuildTracks()
 			EnsureGlow(slot, kind, entry.ids, track.glow ~= false)
 			SetSlotMode(slot, "aura")
 		end
+		EnsureCast(slot, ns.CastName(track))
 		slot:Show()
 	end
 	for index = #visible + 1, #slots do
 		local slot = slots[index]
 		slot.track = nil
+		EnsureCast(slot, nil)
 		SetSlotMode(slot, "off")
 		slot:Hide()
 	end
