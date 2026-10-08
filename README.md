@@ -14,7 +14,8 @@ World of Warcraft: Forever and its addon rules.
 
 - **Up:** the spell's icon with the seconds left.
 - **Missing:** the icon in grey with a red frame, so a gap is seen at a glance.
-- **Last 3 seconds:** the number turns red and the icon gets the action bar proc glow.
+- **Last seconds:** the number turns red and the icon gets the action bar proc glow. 3 seconds
+  by default; set it from 1 to 10 in the editor.
 - **Pet bars:** health and mana of your pet under the row, with numbers.
 - **Edited in game:** add any spell by name or id as "on target" or "my buff", switch
   icons on and off, change their order, remove them. A name covers every rank of the
@@ -22,7 +23,10 @@ World of Warcraft: Forever and its addon rules.
 - **Per class:** each class keeps its own list. Warlocks start with Corruption, Immolate,
   Bane, Curse and Armor; other classes start empty.
 - An icon from the starting list shows once you have learned one of its spells.
-- Size, position (drag with the mouse) and the pet bars are set in the same window.
+- Size, position (drag with the mouse), the glow seconds and the pet bars are set in the same
+  window.
+- The row sits above your player frame. If the frame is against the top of the screen (the
+  game's default layout) it sits under it instead.
 
 ## Install
 
@@ -79,4 +83,4 @@ What changed in each version: [CHANGELOG.md](CHANGELOG.md).
 
 ## License
 
-MIT — see [LICENSE](LICENSE).  Current version: 1.0.0.
+MIT — see [LICENSE](LICENSE).  Current version: 1.2.0.
