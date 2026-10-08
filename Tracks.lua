@@ -9,12 +9,10 @@ local SLOT_KEY = "track"
 local GROUP_KEY = "gate"
 local slots = {}
 
--- Time left: white, yellow under 5 seconds, red under 3. The client evaluates the curve.
+-- Time left: white, then yellow, then red for the last seconds (the same seconds the glow
+-- runs, see ns.SetGlowSeconds). The client evaluates the curve.
 local timeColor = C_CurveUtil.CreateColorCurve()
 timeColor:SetType(Enum.LuaCurveType.Step)
-timeColor:AddPoint(0, CreateColor(1, 0.25, 0.25, 1))
-timeColor:AddPoint(3, CreateColor(1, 0.85, 0.2, 1))
-timeColor:AddPoint(5, CreateColor(1, 1, 1, 1))
 
 -- Time left as a bare number of seconds, rounded up; nothing from 100 seconds on (a long
 -- buff needs no countdown).
@@ -28,20 +26,20 @@ if C_StringUtil and C_StringUtil.CreateNumericRuleFormatter then
 end
 
 -- Glow for the last seconds: the proc glow of the action bars (the one WeakAuras-style glow
--- addons use), running only while less than GLOW_SECONDS are left.
+-- addons use), running only while less than the chosen number of seconds are left.
 --
 -- Addon code may not read the time left, and no script runs inside an aura button, so the
 -- glow cannot be switched on or animated from Lua. A second, otherwise empty aura slot lies
 -- over the icon. Its "time text" comes from a number formatter with one rule per 1/30 second:
 -- each rule's text is one frame of Blizzard's proc glow flipbook as an inline picture, and
--- from GLOW_SECONDS up the text is blank. The client picks the rule from the time left, so
--- it plays the animation and starts it at the right moment by itself.
-local GLOW_SECONDS = 3
+-- from the chosen number of seconds up the text is blank. The client picks the rule from
+-- the time left, so it plays the animation and starts it at the right moment by itself.
+ns.GLOW_MIN, ns.GLOW_MAX = 1, 10
 local GLOW_SIZE = 46                   -- the glow reaches a little past the 30 px icon
 local GLOW_ATLAS = "UI-HUD-ActionBar-Proc-Loop-Flipbook"
 local GLOW_COLUMNS, GLOW_ROWS, GLOW_FRAMES = 5, 6, 30   -- as in ActionButtonSpellAlerts.xml
 
-local glowFormat, glowBinding
+local glowFormat, glowBinding, glowFrames
 do
 	local info = C_Texture and C_Texture.GetAtlasInfo and C_Texture.GetAtlasInfo(GLOW_ATLAS)
 	if info and C_StringUtil and C_StringUtil.CreateNumericRuleFormatter then
@@ -58,20 +56,35 @@ do
 			frames[frame] = string.format("|T%s:%d:%d:0:0:%d:%d:%d:%d:%d:%d|t", tostring(file), GLOW_SIZE, GLOW_SIZE,
 				fileWidth + 0.5, fileHeight + 0.5, x + 0.5, x + cellWidth + 0.5, y + 0.5, y + cellHeight + 0.5)
 		end
-		local rules = {}
-		local steps = GLOW_SECONDS * GLOW_FRAMES
-		for step = 0, steps - 1 do
-			-- time runs down, the animation runs forward
-			rules[#rules + 1] = { threshold = step / GLOW_FRAMES, format = frames[(steps - 1 - step) % GLOW_FRAMES] }
-		end
-		rules[#rules + 1] = { threshold = GLOW_SECONDS, format = " " }
+		glowFrames = frames
 		glowFormat = C_StringUtil.CreateNumericRuleFormatter()
-		glowFormat:SetBreakpoints(rules)
 		-- redrawn every frame of the animation
 		glowBinding = C_DurationUtil.CreateDurationTextBinding()
 		glowBinding:SetUpdateInterval(1 / GLOW_FRAMES)
 	end
 end
+
+-- How many seconds before the end the glow starts and the number turns red. The icons keep
+-- the same formatter and curve, so a change shows at once.
+function ns.SetGlowSeconds(seconds)
+	seconds = math.max(ns.GLOW_MIN, math.min(ns.GLOW_MAX, math.floor(tonumber(seconds) or 3)))
+	timeColor:ClearPoints()
+	timeColor:AddPoint(0, CreateColor(1, 0.25, 0.25, 1))
+	timeColor:AddPoint(seconds, CreateColor(1, 0.85, 0.2, 1))
+	timeColor:AddPoint(seconds + 2, CreateColor(1, 1, 1, 1))
+	if glowFormat then
+		local rules = {}
+		local steps = seconds * GLOW_FRAMES
+		for step = 0, steps - 1 do
+			-- time runs down, the animation runs forward
+			rules[#rules + 1] = { threshold = step / GLOW_FRAMES, format = glowFrames[(steps - 1 - step) % GLOW_FRAMES] }
+		end
+		rules[#rules + 1] = { threshold = seconds, format = " " }
+		glowFormat:SetBreakpoints(rules)
+	end
+	return seconds
+end
+ns.SetGlowSeconds(3)
 
 local function HasAuraContainer()
 	return C_XMLUtil and C_XMLUtil.GetTemplateInfo
@@ -81,11 +94,28 @@ end
 ------------------------------------------------------------------------------------------
 -- Holder: sits above the player frame, can be dragged while unlocked.
 ------------------------------------------------------------------------------------------
+-- Is there room for the row above the player frame? In the game's default layout the
+-- player frame sits in the top corner of the screen and there is not: the screen edge would
+-- push the row down over the health bar.
+local function RoomAbove()
+	local top, screenTop = PlayerFrame:GetTop(), UIParent:GetTop()
+	if not top or not screenTop then return true end
+	local screen = UIParent:GetEffectiveScale()
+	local rowTop = top * PlayerFrame:GetEffectiveScale() + (ns.db.y + ICON + 16) * ns.db.scale * screen
+	return rowTop <= screenTop * screen
+end
+
+local BELOW_GAP = -4      -- under the player frame and the pet frame
+
 function ns.PlaceHolder()
 	local holder = ns.holder
 	holder:ClearAllPoints()
 	holder:SetScale(ns.db.scale)
-	if PlayerFrame then
+	local untouched = ns.db.x == ns.defaults.x and ns.db.y == ns.defaults.y
+	if PlayerFrame and untouched and not RoomAbove() then
+		-- never moved by the player and no room above: under the frame instead
+		holder:SetPoint("TOPLEFT", PlayerFrame, "BOTTOMLEFT", ns.db.x, BELOW_GAP)
+	elseif PlayerFrame then
 		holder:SetPoint("BOTTOMLEFT", PlayerFrame, "TOPLEFT", ns.db.x, ns.db.y)
 	else
 		holder:SetPoint("CENTER", UIParent, "CENTER", ns.db.x, ns.db.y)

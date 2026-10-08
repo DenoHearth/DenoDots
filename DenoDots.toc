@@ -2,7 +2,7 @@
 ## Title: Deno Dots
 ## Notes: Small icons with timers for your damage-over-time effects on the target and for your own buffs, a red mark on the ones that are missing, and pet health and mana bars. The list is edited in game.
 ## Author: Deniz
-## Version: 1.1.0
+## Version: 1.2.0
 ## Category: Combat
 ## SavedVariables: DenoDotsDB
 

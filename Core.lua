@@ -65,6 +65,7 @@ ns.defaults = {
 	petHealth = true,
 	petMana = true,
 	numbers = true,
+	glowSeconds = 3,      -- the glow and the red number start this many seconds before the end
 	classes = {},
 }
 
@@ -189,11 +190,13 @@ events:SetScript("OnEvent", function(_, event)
 		for key, value in pairs(ns.defaults) do
 			if ns.db[key] == nil then ns.db[key] = type(value) == "table" and {} or value end
 		end
+		ns.db.glowSeconds = ns.SetGlowSeconds(ns.db.glowSeconds)
 		ns.CreateHolder()
 		ns.CreatePetBars()
 		ns.Refresh()
 		for _, name in ipairs({ "SPELLS_CHANGED", "PLAYER_REGEN_ENABLED", "PLAYER_REGEN_DISABLED",
-			"PLAYER_TARGET_CHANGED", "PLAYER_ENTERING_WORLD", "SPELL_UPDATE_COOLDOWN" }) do
+			"PLAYER_TARGET_CHANGED", "PLAYER_ENTERING_WORLD", "SPELL_UPDATE_COOLDOWN",
+			"EDIT_MODE_LAYOUTS_UPDATED" }) do
 			events:RegisterEvent(name)
 		end
 		events:RegisterUnitEvent("UNIT_PET", "player")
@@ -206,7 +209,11 @@ events:SetScript("OnEvent", function(_, event)
 		if ns.CloseEditor then ns.CloseEditor() end
 	elseif event == "PLAYER_REGEN_ENABLED" then
 		if pending then ns.Refresh() end
+	elseif event == "EDIT_MODE_LAYOUTS_UPDATED" then
+		-- the player frame may have moved: above it if there is room, under it if not
+		if not InCombatLockdown() then ns.PlaceHolder() end
 	else
+		if event == "PLAYER_ENTERING_WORLD" and not InCombatLockdown() then ns.PlaceHolder() end
 		ns.Refresh()
 	end
 end)
