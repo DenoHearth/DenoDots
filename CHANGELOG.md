@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.4.0 — 2026-11-07
+
+- New: a Deno Dots page in the game's Options, AddOns, with an Open Editor button and a Show Minimap Button switch
+- New: a minimap button (click opens the editor, drag moves it), picked up by minimap button collectors such as Button Drawer
+- The pet health and mana bars above the player frame are off by default (they showed the pet twice next to a nameplate addon's pet frame); the editor still turns them on
+
 ## v1.3.0 — 2026-10-08
 
 - Click an icon to cast its spell, also in combat; a new switch in the editor turns it off

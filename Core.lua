@@ -62,9 +62,13 @@ local CLASS_DEFAULTS = {
 ns.defaults = {
 	x = 88, y = -6,       -- offset from the top left corner of the player frame
 	scale = 1,
-	petHealth = true,
-	petMana = true,
+	-- off since 1.3.1 (his ask, 2026-11-05: the pet showed twice, here and in Deno Nameplate's
+	-- demon frame; "remove the upper one"); the editor's Pet health / Pet mana switches bring them back
+	petHealth = false,
+	petMana = false,
 	numbers = true,
+	minimapShow = true,   -- 1.4.0: minimap button (Menu.lua), picked up by Button Drawer
+	minimapAngle = 220,
 	glowSeconds = 3,      -- the glow and the red number start this many seconds before the end
 	clickCast = true,     -- a click on an icon casts its spell
 	classes = {},
@@ -213,10 +217,16 @@ events:SetScript("OnEvent", function(_, event)
 		for key, value in pairs(ns.defaults) do
 			if ns.db[key] == nil then ns.db[key] = type(value) == "table" and {} or value end
 		end
+		-- 1.3.1: once, saved settings from before take the new default too
+		if not ns.db.petBarsOff then
+			ns.db.petBarsOff = true
+			ns.db.petHealth, ns.db.petMana = false, false
+		end
 		ns.db.glowSeconds = ns.SetGlowSeconds(ns.db.glowSeconds)
 		ns.CreateHolder()
 		ns.CreatePetBars()
 		ns.Refresh()
+		ns.StartMenu()
 		for _, name in ipairs({ "SPELLS_CHANGED", "PLAYER_REGEN_ENABLED", "PLAYER_REGEN_DISABLED",
 			"PLAYER_TARGET_CHANGED", "PLAYER_ENTERING_WORLD", "SPELL_UPDATE_COOLDOWN",
 			"EDIT_MODE_LAYOUTS_UPDATED" }) do
