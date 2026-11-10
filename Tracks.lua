@@ -86,6 +86,34 @@ function ns.SetGlowSeconds(seconds)
 end
 ns.SetGlowSeconds(3)
 
+-- 1.5.0 (his ask: "better glows"): the same proc glow as a real, looping flipbook texture
+-- for the places where no secret decides when it shows. A reminder's grey picture only
+-- exists while the buff is missing, so a glow next to it needs no test at all.
+local GLOW_PAD = (GLOW_SIZE - ICON) / 2
+local function LoopGlow(parent, anchor, red)
+	local glow = parent:CreateTexture(nil, "OVERLAY")
+	glow:SetAtlas(GLOW_ATLAS)
+	glow:SetSize(GLOW_SIZE, GLOW_SIZE)
+	glow:SetPoint("CENTER", anchor, "CENTER")
+	if red then
+		glow:SetDesaturated(true)
+		glow:SetVertexColor(1, 0.22, 0.18)
+	end
+	local loop = parent:CreateAnimationGroup()
+	loop:SetLooping("REPEAT")
+	local flip = loop:CreateAnimation("FlipBook")
+	flip:SetTarget(glow)
+	flip:SetFlipBookRows(GLOW_ROWS)
+	flip:SetFlipBookColumns(GLOW_COLUMNS)
+	flip:SetFlipBookFrames(GLOW_FRAMES)
+	flip:SetFlipBookFrameWidth(0)
+	flip:SetFlipBookFrameHeight(0)
+	flip:SetDuration(1)
+	loop:Play()
+	glow.loop = loop
+	return glow
+end
+
 local function HasAuraContainer()
 	return C_XMLUtil and C_XMLUtil.GetTemplateInfo
 		and C_XMLUtil.GetTemplateInfo("CustomAuraContainerTemplate") ~= nil
@@ -173,6 +201,7 @@ function ns.UnlockHolder()
 	ns.holder:EnableMouse(true)
 	ns.holder.handle:Show()
 	ns.holder.handleText:Show()
+	ns.LayoutRow()
 end
 
 function ns.LockHolder()
@@ -183,6 +212,7 @@ function ns.LockHolder()
 	ns.holder.handle:Hide()
 	ns.holder.handleText:Hide()
 	ShowCastButtons(ns.db.clickCast)
+	ns.LayoutRow()
 end
 
 ------------------------------------------------------------------------------------------
@@ -198,6 +228,7 @@ local function GreyPicture(parent, anchor)
 	icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
 	icon:SetDesaturated(true)
 	icon:SetVertexColor(0.5, 0.5, 0.5)
+	icon.frame = frame
 	return icon
 end
 
@@ -311,9 +342,14 @@ local function EnsureGate(slot, kind, ids)
 		slot.gate:SetAuraGroupEnabled(GROUP_KEY, true)
 		return
 	end
+	-- 1.5.0: the host reaches GLOW_PAD past the slot on every side so the red glow around the
+	-- grey picture fits inside the clip; the hidden button is as wide as the host, so the clip
+	-- still closes completely while the buff is up.
 	local host = CreateFrame("Frame", nil, slot, "DisableUntrustedLayoutScriptsTemplate")
-	host:SetAllPoints(slot)
+	host:SetSize(ICON + 2 * GLOW_PAD, ICON + 2 * GLOW_PAD)
+	host:SetPoint("CENTER", slot, "CENTER")
 	slot.gateHost = host
+	local width = ICON + 2 * GLOW_PAD + 1
 	local gate = CreateFrame("AuraContainer", nil, host, "CustomAuraContainerTemplate")
 	slot.gate = gate
 	gate:SetPoint("TOPLEFT", host, "TOPLEFT")      -- one point only: Blizzard sets the size
@@ -321,14 +357,15 @@ local function EnsureGate(slot, kind, ids)
 	gate:AddAuraGroup(GROUP_KEY, kind.filter, {
 		candidateFilters = filters,
 		maxFrameCount = 1,
-		layout = { elementWidth = ICON + 1, elementHeight = ICON },
-		initializeFrame = function(button) button:SetSize(ICON + 1, ICON) end,   -- draws nothing
+		layout = { elementWidth = width, elementHeight = ICON },
+		initializeFrame = function(button) button:SetSize(width, ICON) end,   -- draws nothing
 	})
 	local clip = CreateFrame("Frame", nil, host, "DisableUntrustedLayoutScriptsTemplate")
 	clip:SetClipsChildren(true)
 	clip:SetPoint("TOPLEFT", gate, "TOPRIGHT", -1, 0)
 	clip:SetPoint("BOTTOMRIGHT", host, "BOTTOMRIGHT")
-	slot.gateIcon = GreyPicture(clip, host)
+	slot.gateIcon = GreyPicture(clip, slot)
+	slot.gateGlow = LoopGlow(clip, host, true)
 end
 
 -- A cooldown: our own frame, nothing sealed. The duration object goes straight from the
@@ -350,6 +387,11 @@ local function EnsureCooldown(slot, spellID, icon, showTimer)
 		cool.swipe:SetPoint("TOPLEFT", 2, -2)
 		cool.swipe:SetPoint("BOTTOMRIGHT", -2, 2)
 		cool.swipe:SetHideCountdownNumbers(true)
+		cool.swipe:SetSwipeColor(0, 0, 0, 0.6)   -- 1.7.4: the icon stays visible under the swipe
+		cool.swipe:SetDrawEdge(false)            -- 1.7.5: no yellow edge line (the action bar has none)
+		-- 1.7.4 (his report: the ready glow came back only after casting another spell): no
+		-- SPELL_UPDATE_COOLDOWN comes when a cooldown ends, the swipe's own end does
+		cool.swipe:SetScript("OnCooldownDone", function() ns.UpdateCooldowns() end)
 		local textFrame = CreateFrame("Frame", nil, cool)
 		textFrame:SetAllPoints()
 		textFrame:SetFrameLevel(cool.swipe:GetFrameLevel() + 2)
@@ -360,6 +402,36 @@ local function EnsureCooldown(slot, spellID, icon, showTimer)
 		cool.binding:SetZeroDurationText("")
 		cool.binding:SetExpiredText("")
 		cool.binding:SetFontString(cool.time)
+		cool.visual = { frame, cool.icon, textFrame }   -- the swipe is faded, not hidden (it would reappear)
+		-- 1.7.5 (audit after "I feel like you fixed nothing"): the ready glow no longer waits for
+		-- an event. The client sends none when a cooldown ends, and the text-width trick of
+		-- 1.7.2-1.7.4 only changed on SPELL_UPDATE_COOLDOWN. While shown (in combat), it asks the
+		-- client every 0.1 s and hands the (secret) "still cooling" answer straight to
+		-- SetAlphaFromBoolean; the addon never reads it. 0 / 255 works whether the call counts
+		-- alpha from 0 to 1 or from 0 to 255.
+		do
+			local ready = CreateFrame("Frame", nil, cool)
+			cool.ready = ready
+			ready:SetSize(ICON, ICON)
+			ready:SetPoint("CENTER", cool, "CENTER")
+			ready:SetFrameLevel(textFrame:GetFrameLevel() + 1)
+			ready.host = CreateFrame("Frame", nil, ready)
+			ready.host:SetAllPoints()
+			LoopGlow(ready.host, ready)
+			ready.wait = 0
+			ready:SetScript("OnUpdate", function(self, elapsed)
+				self.wait = self.wait + elapsed
+				if self.wait < 0.1 then return end
+				self.wait = 0
+				local duration = cool.spellID and C_Spell.GetSpellCooldownDuration(cool.spellID, true)
+				if duration then
+					self.host:SetAlphaFromBoolean(duration:IsActive(), 0, 255)
+				else
+					self.host:SetAlpha(1)
+				end
+			end)
+			ready:Hide()
+		end
 	end
 	cool.spellID = spellID
 	cool.icon:SetTexture(icon)
@@ -413,6 +485,90 @@ local function SetSlotMode(slot, mode)
 end
 
 ------------------------------------------------------------------------------------------
+-- 1.7.0 (his ask, 2026-11-10): "toggle only glow and tracker off, and the glow shows up on my
+-- action bar instead". With ns.db.barMode the row draws nothing; each icon's glow parts move
+-- over the action button that holds its spell. They stay our own frames (only anchored to
+-- the button, never parented to it), and the client still decides when they show.
+------------------------------------------------------------------------------------------
+local BAR_NAMES = { "ActionButton", "MultiBarBottomLeftButton", "MultiBarBottomRightButton",
+	"MultiBarLeftButton", "MultiBarRightButton", "MultiBar5Button", "MultiBar6Button", "MultiBar7Button" }
+
+-- The first shown action button whose slot holds one of the spells (any rank), or nil.
+local function FindBarButton(ids, extra)
+	if not (C_ActionBar and C_ActionBar.FindSpellActionButtons) then return end
+	local wanted = {}
+	local set = Enum.ActionBarSet and Enum.ActionBarSet.Mkb
+	local function Add(id)
+		local found = C_ActionBar.FindSpellActionButtons(id, set)
+		if found then
+			for _, actionSlot in ipairs(found) do wanted[actionSlot] = true end
+		end
+	end
+	for id in pairs(ids) do Add(id) end
+	if extra then Add(extra) end
+	if not next(wanted) then return end
+	for _, prefix in ipairs(BAR_NAMES) do
+		for i = 1, 12 do
+			local button = _G[prefix .. i]
+			if button and button.action and wanted[button.action] and button:IsVisible() then return button end
+		end
+	end
+end
+
+-- Puts a glow part over the button (scaled to its size, above it) or back on the slot.
+local function Put(frame, slot, button)
+	frame:ClearAllPoints()
+	frame:SetScale(1)
+	if button then
+		local scale = button:GetWidth() * button:GetEffectiveScale() / (ICON * frame:GetEffectiveScale())
+		frame:SetScale(scale)
+		frame:SetPoint("CENTER", button, "CENTER")
+		frame:SetFrameStrata("HIGH")
+	else
+		frame:SetPoint("CENTER", slot, "CENTER")
+		frame:SetFrameStrata(ns.holder:GetFrameStrata())
+	end
+end
+
+-- 1.7.5: each icon chooses: on the row, or its glow on the action bar ("Row" / "Bar" in the
+-- editor). An icon that never chose follows the global switch.
+function ns.OnBar(track)
+	if track.place then return track.place == "bar" end
+	return ns.db.barMode == true
+end
+
+local function PlaceParts(slot, entry, track)
+	local bar = ns.OnBar(track)
+	local button
+	if bar then
+		local extra = track.bar and C_Spell.GetSpellInfo(track.bar)
+		button = FindBarButton(entry.ids, extra and extra.spellID)
+	end
+	local glowAlpha = (bar and not button) and 0 or 1   -- spell not on a bar: nothing to glow on
+	if slot.mode == "aura" then
+		for _, container in pairs(slot.containers) do container:SetAlpha(bar and 0 or 1) end
+		if slot.glow then
+			Put(slot.glow, slot, button)
+			slot.glow:SetAlpha(glowAlpha)
+		end
+	elseif slot.mode == "gate" then
+		Put(slot.gateHost, slot, button)
+		slot.gateHost:SetAlpha(glowAlpha)
+		slot.gateIcon:SetShown(not bar)
+		slot.gateIcon.frame:SetShown(not bar)
+	elseif slot.mode == "cooldown" and slot.cool then
+		for _, part in ipairs(slot.cool.visual) do part:SetShown(not bar) end
+		-- a Cooldown frame shows itself again on every new cooldown: fade it instead (the
+		-- dark square with a yellow line that stayed on the row in bar mode)
+		slot.cool.swipe:SetAlpha(bar and 0 or 1)
+		if slot.cool.ready then
+			Put(slot.cool.ready, slot, button)
+			slot.cool.ready:SetAlpha(glowAlpha)
+		end
+	end
+end
+
+------------------------------------------------------------------------------------------
 -- The row
 ------------------------------------------------------------------------------------------
 -- Tracks that are switched on and, unless marked "always", known to this character.
@@ -421,9 +577,11 @@ end
 function ns.VisibleTracks()
 	local visible, reminders = {}, {}
 	for _, track in ipairs(ns.tracks) do
+		-- 1.7.4: "in combat only" icons are built like the others and only hidden out of combat
+		-- (ns.LayoutRow). Building them at the start of combat missed a Seal that was already up.
 		if track.enabled ~= false and #visible + #reminders < ns.MAX_TRACKS then
 			local ids, icon = ns.Resolve(track)
-			local known = ns.KnownSpell(ids)
+			local known = ns.KnownSpell(ids) or ns.BarSpellKnown(track)
 			if next(ids) and (track.always or known) then
 				local list = ns.OnlyWhenMissing(track) and reminders or visible
 				list[#list + 1] = { track = track, ids = ids, icon = icon, spellID = known or next(ids) }
@@ -450,8 +608,8 @@ function ns.BuildTracks()
 		local track = entry.track
 		local kind = ns.KINDS[track.kind]
 		slot.track = track
-		slot:ClearAllPoints()
-		slot:SetPoint("TOPLEFT", ns.holder, "TOPLEFT", (index - 1) * (ICON + GAP), 0)
+		slot.combatOnly = track.combat == true
+		slot.reminder = kind.onlyWhenMissing == true
 		slot.missing.icon:SetTexture(entry.icon)
 		if track.kind == "cooldown" then
 			EnsureCooldown(slot, entry.spellID, entry.icon, track.timer ~= false)
@@ -459,14 +617,16 @@ function ns.BuildTracks()
 		elseif kind.onlyWhenMissing then
 			EnsureGate(slot, kind, entry.ids)
 			slot.gateIcon:SetTexture(entry.icon)
+			slot.gateGlow:SetShown(track.glow ~= false)
 			SetSlotMode(slot, "gate")
 		else
 			EnsureAura(slot, kind, entry.ids, track.timer ~= false)
 			EnsureGlow(slot, kind, entry.ids, track.glow ~= false)
 			SetSlotMode(slot, "aura")
 		end
-		EnsureCast(slot, ns.CastName(track))
+		EnsureCast(slot, not ns.OnBar(track) and ns.CastName(track) or nil)
 		slot:Show()
+		PlaceParts(slot, entry, track)
 	end
 	for index = #visible + 1, #slots do
 		local slot = slots[index]
@@ -475,11 +635,38 @@ function ns.BuildTracks()
 		SetSlotMode(slot, "off")
 		slot:Hide()
 	end
+	ns.LayoutRow()
+end
+
+-- Places the icons: "in combat only" ones are see-through and out of the way out of combat
+-- (all of them show while the row is unlocked), the rest close up. Only moves and fades our
+-- own frames; the cast buttons are shown or hidden only out of combat. Runs in
+-- PLAYER_REGEN_DISABLED, before the lockdown.
+function ns.LayoutRow()
+	local showAll = ns.inCombat or ns.unlocked
+	local position, steady, count = 0, 0, 0
+	for _, slot in ipairs(slots) do
+		if slot.track then
+			local shown = showAll or not slot.combatOnly
+			slot:ClearAllPoints()
+			slot:SetPoint("TOPLEFT", ns.holder, "TOPLEFT", (shown and position or 0) * (ICON + GAP), 0)
+			slot:SetAlpha(shown and 1 or 0)
+			if shown then
+				position = position + 1
+				count = count + 1
+				if not slot.reminder then steady = steady + 1 end
+			end
+			if slot.cast and not InCombatLockdown() then
+				slot.cast:SetShown(shown and not ns.unlocked and slot.cast.spellName ~= nil)
+			end
+		end
+	end
 	-- the pet bars are exactly as wide as the icons that are always there (reminders at the
 	-- end do not stretch them); with no such icon, as wide as all of them or three icons
-	local wide = steady > 0 and steady or #visible
+	local wide = steady > 0 and steady or count
 	ns.rowWidth = wide > 0 and (wide * (ICON + GAP) - GAP) or 98
 	ns.holder:SetSize(ns.rowWidth, ICON + 14)
+	if ns.LayoutPetBars then ns.LayoutPetBars() end
 end
 
 -- The grey "missing" picture shows only while there is something the effect could be on:
@@ -497,7 +684,7 @@ function ns.UpdateMarkers()
 			local kind = ns.KINDS[track.kind]
 			local there = kind.unit and present[kind.unit] and true or false
 			-- the plain picture under an aura slot, or the clipped one of a reminder
-			slot.missing:SetShown(slot.mode == "aura" and track.missing ~= false and there)
+			slot.missing:SetShown(slot.mode == "aura" and track.missing ~= false and there and not ns.OnBar(track))
 			if slot.gateHost then slot.gateHost:SetShown(slot.mode == "gate" and there) end
 		end
 	end
@@ -511,6 +698,35 @@ function ns.UpdateCooldowns()
 			local duration = C_Spell.GetSpellCooldownDuration(cool.spellID, true)
 			cool.swipe:SetCooldownFromDurationObject(duration, true)
 			cool.binding:SetDuration(duration)
+		end
+	end
+end
+
+-- 1.7.5: aura containers listen to UNIT_AURA only, not to a target change (Blizzard's own
+-- target frame calls UpdateAllAuras on PLAYER_TARGET_CHANGED). This asks every container to
+-- look at the unit again; target: only the target ones. Reads nothing.
+function ns.RescanAuras(onlyTarget)
+	for _, slot in ipairs(slots) do
+		local kind = slot.track and ns.KINDS[slot.track.kind]
+		if kind and kind.unit and (not onlyTarget or kind.unit == "target") then
+			for _, container in pairs(slot.containers) do
+				if container.UpdateAllAuras then container:UpdateAllAuras() end
+			end
+			if slot.glow and slot.glow.UpdateAllAuras then slot.glow:UpdateAllAuras() end
+			if slot.gate and slot.gate.UpdateAllAuras then slot.gate:UpdateAllAuras() end
+		end
+	end
+end
+
+-- Cooldown ready glows only in combat (out of combat every spell is ready and the row would
+-- glow all the time). inCombat comes from the event: during PLAYER_REGEN_DISABLED the lockdown
+-- has not started yet.
+function ns.UpdateReadyGlows(inCombat)
+	if inCombat == nil then inCombat = InCombatLockdown() end
+	for _, slot in ipairs(slots) do
+		local cool = slot.cool
+		if cool and cool.ready then
+			cool.ready:SetShown(inCombat and slot.mode == "cooldown" and slot.track ~= nil and slot.track.glow ~= false)
 		end
 	end
 end

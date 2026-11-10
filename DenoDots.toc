@@ -1,8 +1,8 @@
 ## Interface: 16001
 ## Title: Deno Dots
-## Notes: Small icons with timers for your damage-over-time effects on the target and for your own buffs, a red mark on the ones that are missing, and pet health and mana bars. The list is edited in game.
+## Notes: Small icons with timers for your damage-over-time effects on the target, your own buffs and cooldowns, a glowing red mark on the ones that are missing, and pet health and mana bars. Warlock and paladin lists built in; the list is edited in game.
 ## Author: Deniz
-## Version: 1.4.0
+## Version: 1.7.5
 ## Category: Combat
 ## SavedVariables: DenoDotsDB
 

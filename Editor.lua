@@ -5,12 +5,12 @@ local ADDON, ns = ...
 
 local ROWS = ns.MAX_TRACKS
 local ROW_HEIGHT = 30
-local WIDTH = 680
+local WIDTH = 820
 local PAD = 14
 local LIST_TOP = 92
 
 -- column positions inside a row
-local COL_SPELL, COL_TYPE, COL_OPTIONS, COL_ORDER = 54, 244, 340, 556
+local COL_SPELL, COL_TYPE, COL_OPTIONS, COL_ORDER = 54, 244, 340, 696
 
 -- One flat look: a grey window, darker rows, thin outlines, and blue only where something
 -- is switched on or under the mouse.
@@ -232,9 +232,30 @@ local function CreateRow(index)
 	end
 	row.missing = Flag("missing", "Missing", 76, COL_OPTIONS, "Show when missing",
 		"A grey icon in a red frame while the effect is not up.")
-	row.glow = Flag("glow", "Glow", 60, COL_OPTIONS + 79, "Glow before it ends",
-		function() return "The proc glow during the last " .. ns.db.glowSeconds .. " seconds. The number of seconds is set below." end)
+	row.glow = Flag("glow", "Glow", 60, COL_OPTIONS + 79, "Glow",
+		function()
+			local track = ns.tracks[index]
+			if track and track.kind == "reminder" then
+				return "A red proc glow around the grey icon while the buff is missing."
+			elseif track and track.kind == "cooldown" then
+				return "A pulsing proc glow while the spell is ready, in combat only."
+			end
+			return "The proc glow during the last " .. ns.db.glowSeconds .. " seconds. The number of seconds is set below."
+		end)
 	row.timer = Flag("timer", "Timer", 64, COL_OPTIONS + 142, "Timer", "The seconds left, written on the icon.")
+	row.combat = Flag("combat", "Combat", 76, COL_OPTIONS + 209, "In combat only",
+		"Shown only while you are in combat. Off: shown all the time. While Move with mouse is ticked every icon shows.")
+
+	-- 1.7.5: where this icon shows: on the row, or as a glow on the action bar
+	row.place = Flat(row, "", 50, 20, function()
+		local track = ns.tracks[index]
+		track.place = ns.OnBar(track) and "row" or "bar"
+		Changed()
+	end)
+	row.place:SetPoint("LEFT", row, "LEFT", COL_OPTIONS + 290, 0)
+	Tooltip(row.place, "Row or Bar",
+		"Row: the icon above your player frame. Bar: no icon; its glow shows on the action button "
+		.. "with the spell instead. Click to switch.")
 
 	row.up = Flat(row, "Up", 28, 20, function()
 		if index > 1 then
@@ -274,7 +295,7 @@ Update = function()
 			local note = #track.spells > 1 and (#track.spells .. " spells, any of them") or ""
 			if not next(ids) then
 				note = "|cffff5555spell not found|r"
-			elseif not track.always and not ns.IsKnown(ids) then
+			elseif not track.always and not ns.IsKnown(ids) and not ns.BarSpellKnown(track) then
 				note = "not learned yet"
 			end
 			row.icon:SetTexture(icon)
@@ -284,7 +305,8 @@ Update = function()
 			row.enabled:Set(track.enabled ~= false)
 			row.kind.label:SetText(kind.label)
 			row.kind:SetColor(kind.color)
-			for _, key in ipairs({ "missing", "glow", "timer" }) do
+			row.place.label:SetText(ns.OnBar(track) and "Bar" or "Row")
+			for _, key in ipairs({ "missing", "glow", "timer", "combat" }) do
 				row[key]:SetShown(switches[key] == true)
 				row[key]:Set(track[key] ~= false)
 			end
@@ -302,6 +324,7 @@ Update = function()
 	editor.numbers:Set(ns.db.numbers)
 	editor.move:Set(ns.unlocked)
 	editor.clickCast:Set(ns.db.clickCast)
+	editor.barMode:Set(ns.db.barMode == true)
 	editor.scaleText:SetText(string.format("%d%%", math.floor(ns.db.scale * 100 + 0.5)))
 	editor.glowText:SetText(ns.db.glowSeconds .. " s")
 end
@@ -374,7 +397,7 @@ end
 local function CreateEditor()
 	local listBottom = LIST_TOP + ROWS * ROW_HEIGHT
 	editor = CreateFrame("Frame", "DenoDotsEditor", UIParent)
-	editor:SetSize(WIDTH, listBottom + 210)
+	editor:SetSize(WIDTH, listBottom + 236)
 	editor:SetPoint("CENTER")
 	editor:SetFrameStrata("DIALOG")
 	editor:SetMovable(true)
@@ -383,7 +406,11 @@ local function CreateEditor()
 	editor:RegisterForDrag("LeftButton")
 	editor:SetScript("OnDragStart", editor.StartMoving)
 	editor:SetScript("OnDragStop", editor.StopMovingOrSizing)
-	editor:SetScript("OnHide", function() ns.LockHolder() end)
+	editor:SetScript("OnHide", function()
+		ns.LockHolder()
+		-- the "in combat only" icons go away again with the editor
+		if not InCombatLockdown() and not ns.inCombat then ns.Refresh() end
+	end)
 	tinsert(UISpecialFrames, "DenoDotsEditor")
 	Fill(editor, C.panel)
 	Outline(editor, C.border)
@@ -510,6 +537,16 @@ local function CreateEditor()
 	Tooltip(editor.clickCast, "Click to cast",
 		"A click on an icon casts its spell, also in combat. Handy for a buff that is missing. "
 		.. "Several spells in one icon: the best one you know.")
+	editor.barMode = Switch(editor, "All icons: glow on my action bars instead of the row", 340, function(on)
+		ns.db.barMode = on
+		for _, track in ipairs(ns.tracks) do track.place = nil end   -- every icon follows
+		Changed()
+	end)
+	editor.barMode:SetPoint("TOPLEFT", PAD, top - 104)
+	Tooltip(editor.barMode, "Glow on action bars",
+		"Sets every icon at once (each icon's Row / Bar button changes just that one). Bar: no icon on the row; the glow shows on the action button with the spell: "
+		.. "the proc glow before an effect ends, the red glow while a reminder's buff is missing, the "
+		.. "ready glow of a cooldown in combat. A spell that is on no action bar shows nothing.")
 	local resetList = Flat(editor, "Reset list to class defaults", 176, 20, function()
 		wipe(ns.tracks)
 		for i, track in ipairs(ns.DefaultTracks()) do ns.tracks[i] = track end
@@ -528,8 +565,13 @@ function ns.OpenEditor()
 	end
 	if not editor then CreateEditor() end
 	editor:Show()
+	ns.Refresh()   -- every icon shows while the editor is open
 	Status("")
 	Update()
+end
+
+function ns.EditorShown()
+	return editor ~= nil and editor:IsShown()
 end
 
 function ns.CloseEditor()

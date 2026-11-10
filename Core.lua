@@ -31,12 +31,12 @@ ns.KIND_ORDER = { "dot", "debuff", "buff", "reminder", "pet", "cooldown" }
 
 -- Which switches a kind has in the editor.
 ns.KIND_SWITCHES = {
-	dot = { missing = true, glow = true, timer = true },
-	debuff = { missing = true, glow = true, timer = true },
-	buff = { missing = true, glow = true, timer = true },
-	reminder = {},
-	pet = { missing = true, glow = true, timer = true },
-	cooldown = { timer = true },
+	dot = { missing = true, glow = true, timer = true, combat = true },
+	debuff = { missing = true, glow = true, timer = true, combat = true },
+	buff = { missing = true, glow = true, timer = true, combat = true },
+	reminder = { glow = true, combat = true },
+	pet = { missing = true, glow = true, timer = true, combat = true },
+	cooldown = { timer = true, glow = true, combat = true },
 }
 
 -- A track is one icon.
@@ -57,6 +57,28 @@ local CLASS_DEFAULTS = {
 			"curse of recklessness", "curse of tongues", "curse of exhaustion", "curse of idiocy" } },
 		{ label = "Armor", kind = "reminder", spells = { "demon skin", "demon armor", "fel armor" } },
 	},
+	-- 1.5.0 (his ask, 2026-11-10, after the mock-up: "build it with better glows"). On Forever
+	-- Judgement no longer uses up the Seal and its debuff lasts 40 s, so the Seal, the
+	-- Judgement on the target and the Judgement cooldown are three icons. The tank icons start
+	-- switched off; one tick in the editor each.
+	PALADIN = {
+		{ label = "Seal", kind = "buff", glow = true, spells = { "seal of righteousness", "seal of command",
+			"seal of the crusader", "seal of light", "seal of wisdom", "seal of justice", "seal of fury",
+			"seal of martyrdom" } },
+		{ label = "Judgement", kind = "dot", bar = "judgement", spells = { "judgement of righteousness", "judgement of command",
+			"judgement of the crusader", "judgement of light", "judgement of wisdom", "judgement of justice",
+			"judgement of fury", "judgement of martyrdom" } },
+		{ label = "Judgement ready", kind = "cooldown", glow = true, spells = { "judgement" } },
+		{ label = "Consecration", kind = "cooldown", glow = false, spells = { "consecration" } },
+		{ label = "Holy Shield", kind = "cooldown", glow = true, enabled = false, spells = { "holy shield" } },
+		{ label = "Aura", kind = "reminder", spells = { "devotion aura", "retribution aura", "concentration aura",
+			"shadow resistance aura", "frost resistance aura", "fire resistance aura" } },
+		{ label = "Blessing", kind = "reminder", spells = { "blessing of might", "blessing of wisdom",
+			"blessing of kings", "blessing of light", "blessing of salvation", "greater blessing of might",
+			"greater blessing of wisdom", "greater blessing of kings", "greater blessing of light",
+			"greater blessing of salvation" } },
+		{ label = "Righteous Fury", kind = "reminder", enabled = false, spells = { "righteous fury" } },
+	},
 }
 
 ns.defaults = {
@@ -71,6 +93,7 @@ ns.defaults = {
 	minimapAngle = 220,
 	glowSeconds = 3,      -- the glow and the red number start this many seconds before the end
 	clickCast = true,     -- a click on an icon casts its spell
+	barMode = false,      -- 1.7.0: no icon row, the glows sit on the action buttons instead
 	classes = {},
 }
 
@@ -97,8 +120,13 @@ function ns.Normalize(track)
 	local onTarget = track.kind == "dot" or track.kind == "debuff"
 	if track.enabled == nil then track.enabled = true end
 	if track.missing == nil then track.missing = true end
-	if track.glow == nil then track.glow = onTarget end
+	-- 1.5.0: reminders glow while missing and cooldowns glow in combat once ready; a new one
+	-- starts with the glow on. Saved tracks keep what they had.
+	if track.glow == nil then track.glow = onTarget or track.kind == "reminder" or track.kind == "cooldown" end
 	if track.timer == nil then track.timer = true end
+	-- 1.6.0 (his ask, 2026-11-10): Judgement, DoTs and buffs only in combat, reminders all the
+	-- time. Saved tracks from before take the same split.
+	if track.combat == nil then track.combat = track.kind ~= "reminder" end
 	track.spells = track.spells or {}
 	track.label = track.label or "?"
 	return track
@@ -118,6 +146,9 @@ function ns.DefaultTracks()
 		local spells = {}
 		for index, spell in ipairs(track.spells) do spells[index] = spell end
 		tracks[i] = ns.NewTrack(track.label, track.kind, spells)
+		tracks[i].bar = track.bar   -- the spell on the action bar when it is not one of the list
+		if track.glow ~= nil then tracks[i].glow = track.glow end
+		if track.enabled ~= nil then tracks[i].enabled = track.enabled end
 	end
 	return tracks
 end
@@ -176,6 +207,14 @@ function ns.KnownSpell(ids)
 	end
 end
 
+-- An effect whose own ids are never "known" (the Judgement debuffs): known when the spell
+-- that puts it there (track.bar) is. Returns that spell's id.
+function ns.BarSpellKnown(track)
+	if not track.bar then return end
+	local info = C_Spell.GetSpellInfo(track.bar)
+	if info and info.spellID and C_SpellBook.IsSpellKnown(info.spellID) then return info.spellID end
+end
+
 function ns.IsKnown(ids)
 	return ns.KnownSpell(ids) ~= nil
 end
@@ -191,12 +230,33 @@ local function SelectClass()
 	if class == ns.class and ns.tracks then return end
 	ns.class = class
 	if not ns.db.classes[class] then ns.db.classes[class] = { tracks = ns.DefaultTracks() } end
-	ns.tracks = ns.db.classes[class].tracks
+	-- 1.5.0, once: a class that had no defaults before (a paladin logged in with 1.4.0 saved
+	-- an empty list) gets the new ones; a list with anything in it stays as it is
+	local saved = ns.db.classes[class]
+	if not saved.defaults15 then
+		saved.defaults15 = true
+		if #saved.tracks == 0 then saved.tracks = ns.DefaultTracks() end
+	end
+	-- 1.7.1, once: lists saved before the "bar" field (paladin Judgement) take it from the defaults
+	if not saved.bar171 then
+		saved.bar171 = true
+		for _, default in ipairs(CLASS_DEFAULTS[class] or {}) do
+			if default.bar then
+				for _, track in ipairs(saved.tracks) do
+					if track.bar == nil and track.label == default.label and track.kind == default.kind then
+						track.bar = default.bar
+					end
+				end
+			end
+		end
+	end
+	ns.tracks = saved.tracks
 	for _, track in ipairs(ns.tracks) do ns.Normalize(track) end
 end
 
-function ns.Refresh()
-	if InCombatLockdown() then
+-- force: rebuild although the lockdown flag may already be set (PLAYER_REGEN_DISABLED)
+function ns.Refresh(force)
+	if InCombatLockdown() and not force then
 		pending = true
 		return
 	end
@@ -206,6 +266,7 @@ function ns.Refresh()
 	ns.LayoutPetBars()
 	ns.UpdateMarkers()
 	ns.UpdateCooldowns()
+	ns.UpdateReadyGlows(ns.inCombat)
 end
 
 local events = CreateFrame("Frame")
@@ -223,26 +284,47 @@ events:SetScript("OnEvent", function(_, event)
 			ns.db.petHealth, ns.db.petMana = false, false
 		end
 		ns.db.glowSeconds = ns.SetGlowSeconds(ns.db.glowSeconds)
+		ns.inCombat = InCombatLockdown()
 		ns.CreateHolder()
 		ns.CreatePetBars()
 		ns.Refresh()
 		ns.StartMenu()
 		for _, name in ipairs({ "SPELLS_CHANGED", "PLAYER_REGEN_ENABLED", "PLAYER_REGEN_DISABLED",
 			"PLAYER_TARGET_CHANGED", "PLAYER_ENTERING_WORLD", "SPELL_UPDATE_COOLDOWN",
-			"EDIT_MODE_LAYOUTS_UPDATED" }) do
+			"EDIT_MODE_LAYOUTS_UPDATED", "ACTIONBAR_SLOT_CHANGED", "ACTIONBAR_PAGE_CHANGED" }) do
 			events:RegisterEvent(name)
 		end
 		events:RegisterUnitEvent("UNIT_PET", "player")
 	elseif event == "PLAYER_TARGET_CHANGED" or event == "UNIT_PET" then
 		ns.UpdateMarkers()
+		if event == "PLAYER_TARGET_CHANGED" then ns.RescanAuras(true) end
 	elseif event == "SPELL_UPDATE_COOLDOWN" then
 		ns.UpdateCooldowns()
 	elseif event == "PLAYER_REGEN_DISABLED" then
+		-- the lockdown starts after this event: the last moment the row can be rebuilt, so the
+		-- "in combat only" icons come in here
+		ns.inCombat = true
 		ns.LockHolder()
 		if ns.CloseEditor then ns.CloseEditor() end
+		ns.LayoutRow()
+		ns.RescanAuras()
+		ns.UpdateCooldowns()
+		ns.UpdateReadyGlows(true)
 	elseif event == "PLAYER_REGEN_ENABLED" then
-		if pending then ns.Refresh() end
+		ns.inCombat = false
+		if pending then ns.Refresh() else ns.LayoutRow() end
+		ns.UpdateReadyGlows(false)
+	elseif event == "ACTIONBAR_SLOT_CHANGED" or event == "ACTIONBAR_PAGE_CHANGED" then
+		-- the glows follow the spells on the bars; many of these come at once
+		if not ns.barQueued then
+			ns.barQueued = true
+			C_Timer.After(0.3, function()
+				ns.barQueued = false
+				ns.Refresh()
+			end)
+		end
 	elseif event == "EDIT_MODE_LAYOUTS_UPDATED" then
+		if not InCombatLockdown() then ns.Refresh() end
 		-- the player frame may have moved: above it if there is room, under it if not
 		if not InCombatLockdown() then ns.PlaceHolder() end
 	else

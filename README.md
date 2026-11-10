@@ -22,8 +22,18 @@ World of Warcraft: Forever and its addon rules.
   spell. Several spells in one icon mean "any of these" (one bane, one curse, one armor).
 - **Click to cast:** a click on an icon casts its spell, also in combat. Handy for a buff
   that is missing.
+- **Reminders:** a buff you should always have (an armor, an aura, a blessing) shows only
+  while it is missing, as a grey icon with a red, animated proc glow.
+- **Cooldowns:** your own spells with a swipe and the seconds left, and a proc glow in combat
+  the moment the spell is ready again.
+- **In combat only:** per icon. DoTs, buffs and cooldowns start as "in combat only",
+  reminders show all the time.
+- **Row or action bar:** per icon. "Bar" puts no icon on the row; its glow shows on the
+  action button that holds the spell instead (Blizzard's own action bars).
 - **Per class:** each class keeps its own list. Warlocks start with Corruption, Immolate,
-  Bane, Curse and Armor; other classes start empty.
+  Bane, Curse and Armor. Paladins start with Seal, Judgement on the target, Judgement
+  ready, Consecration and Aura and Blessing reminders, plus Holy Shield and Righteous Fury
+  switched off for tanks. Other classes start empty.
 - An icon from the starting list shows once you have learned one of its spells.
 - Size, position (drag with the mouse), the glow seconds and the pet bars are set in the same
   window.
@@ -55,6 +65,9 @@ Forever hides combat data from addons: auras, health and time left come back as 
 - The glow is a second, empty slot whose "time text" is one frame of the proc glow per
   1/30 second, chosen by the game from the time left, and blank above 3 seconds. No script
   runs for it.
+- A reminder's glow lives inside the missing picture, so it exists only while the buff is
+  missing. A cooldown's ready glow gets the game's own "still cooling" answer and passes it,
+  unread, to the glow's visibility.
 - Pet health and mana go straight from the API into the bars and the text.
 
 ## Limits
@@ -62,8 +75,9 @@ Forever hides combat data from addons: auras, health and time left come back as 
 - It shows; it does not decide. No "refresh now" advice from enemy health, no damage numbers.
 - A buff whose aura has a different spell id than the spell that casts it has to be added
   by the aura's id.
-- Built and tested before the game's launch against the beta's interface files and an
-  offline simulator. Report anything that looks wrong in the live game.
+- Action bar glows find only Blizzard's own action bars; a spell on two bars glows on the
+  first one.
+- Report anything that looks wrong in the live game.
 
 ## Files
 

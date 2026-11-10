@@ -1,5 +1,14 @@
 # Changelog
 
+## v1.7.5 — 2026-11-10
+
+- New: paladin starting list - Seal, Judgement on the target, Judgement ready, Consecration, Aura and Blessing reminders, and Holy Shield and Righteous Fury (off, for tanks). A paladin who logged in with an older version gets it once
+- New: better glows - reminders get a red, animated proc glow while the buff is missing; cooldowns get a proc glow in combat when the spell is ready
+- New: "Combat" switch per icon - DoTs, buffs and cooldowns show only in combat, reminders all the time
+- New: "Row / Bar" button per icon - Bar shows no icon on the row and puts its glow on the action button with the spell; a switch at the bottom sets every icon at once
+- Fixed: a buff cast before combat now shows when combat starts; the glows follow a target change; the cooldown swipe no longer leaves a dark square in action bar mode
+- The Glow switch now also works for reminders and cooldowns
+
 ## v1.4.0 — 2026-11-07
 
 - New: a Deno Dots page in the game's Options, AddOns, with an Open Editor button and a Show Minimap Button switch
