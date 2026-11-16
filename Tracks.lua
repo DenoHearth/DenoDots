@@ -642,8 +642,16 @@ end
 -- (all of them show while the row is unlocked), the rest close up. Only moves and fades our
 -- own frames; the cast buttons are shown or hidden only out of combat. Runs in
 -- PLAYER_REGEN_DISABLED, before the lockdown.
+-- 1.8.0 (his ask, 2026-11-11): "in combat only" also means "a target I can fight", so the
+-- icons are there before the first hit. Whether the target exists, can be attacked and is
+-- dead is plain data (no secret returns); ns.Plain still guards it.
+function ns.CombatTarget()
+	return ns.Plain(UnitExists("target"), false) and ns.Plain(UnitCanAttack("player", "target"), false)
+		and not ns.Plain(UnitIsDead("target"), false) and true or false
+end
+
 function ns.LayoutRow()
-	local showAll = ns.inCombat or ns.unlocked
+	local showAll = ns.inCombat or ns.unlocked or ns.CombatTarget()
 	local position, steady, count = 0, 0, 0
 	for _, slot in ipairs(slots) do
 		if slot.track then
@@ -674,8 +682,7 @@ end
 function ns.UpdateMarkers()
 	local present = {
 		player = true,
-		target = ns.Plain(UnitExists("target"), false) and ns.Plain(UnitCanAttack("player", "target"), false)
-			and not ns.Plain(UnitIsDead("target"), false),
+		target = ns.CombatTarget(),
 		pet = ns.Plain(UnitExists("pet"), false) and true or false,
 	}
 	for _, slot in ipairs(slots) do

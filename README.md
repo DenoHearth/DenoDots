@@ -27,7 +27,8 @@ World of Warcraft: Forever and its addon rules.
 - **Cooldowns:** your own spells with a swipe and the seconds left, and a proc glow in combat
   the moment the spell is ready again.
 - **In combat only:** per icon. DoTs, buffs and cooldowns start as "in combat only",
-  reminders show all the time.
+  reminders show all the time. "In combat only" icons also show while you have a target
+  you can attack, so they are there before the first hit.
 - **Row or action bar:** per icon. "Bar" puts no icon on the row; its glow shows on the
   action button that holds the spell instead (Blizzard's own action bars).
 - **Per class:** each class keeps its own list. Warlocks start with Corruption, Immolate,

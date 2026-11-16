@@ -244,7 +244,7 @@ local function CreateRow(index)
 		end)
 	row.timer = Flag("timer", "Timer", 64, COL_OPTIONS + 142, "Timer", "The seconds left, written on the icon.")
 	row.combat = Flag("combat", "Combat", 76, COL_OPTIONS + 209, "In combat only",
-		"Shown only while you are in combat. Off: shown all the time. While Move with mouse is ticked every icon shows.")
+		"Shown only while you are in combat or have a target you can attack. Off: shown all the time. While Move with mouse is ticked every icon shows.")
 
 	-- 1.7.5: where this icon shows: on the row, or as a glow on the action bar
 	row.place = Flat(row, "", 50, 20, function()

@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.8.1 — 2026-11-11
+
+- The tiny yellow line under the icon row is gone: it was the game's party leader icon on the player frame peeking out under the row. It is now kept invisible; the game still shows and hides it as before
+
+## v1.8.0 — 2026-11-11
+
+- "In combat only" icons now also show while you have a target you can attack (alive and hostile), before combat starts; they go away again when the target is gone or dead and you are out of combat
+
 ## v1.7.5 — 2026-11-10
 
 - New: paladin starting list - Seal, Judgement on the target, Judgement ready, Consecration, Aura and Blessing reminders, and Holy Shield and Righteous Fury (off, for tanks). A paladin who logged in with an older version gets it once

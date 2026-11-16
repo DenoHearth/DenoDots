@@ -297,7 +297,12 @@ events:SetScript("OnEvent", function(_, event)
 		events:RegisterUnitEvent("UNIT_PET", "player")
 	elseif event == "PLAYER_TARGET_CHANGED" or event == "UNIT_PET" then
 		ns.UpdateMarkers()
-		if event == "PLAYER_TARGET_CHANGED" then ns.RescanAuras(true) end
+		if event == "PLAYER_TARGET_CHANGED" then
+			ns.RescanAuras(true)
+			-- 1.8.0: a combat target out of combat shows the "in combat only" icons. In combat
+			-- they show anyway, and the row (cast buttons on it) is not moved under lockdown.
+			if not ns.inCombat and not InCombatLockdown() then ns.LayoutRow() end
+		end
 	elseif event == "SPELL_UPDATE_COOLDOWN" then
 		ns.UpdateCooldowns()
 	elseif event == "PLAYER_REGEN_DISABLED" then
@@ -337,4 +342,27 @@ SLASH_DENODOTS1 = "/denodots"
 SLASH_DENODOTS2 = "/dots"
 SlashCmdList.DENODOTS = function()
 	ns.OpenEditor()
+end
+
+-- 1.8.1 (his ask, 2026-11-11: "tiny yellow line under it, remove that"): the line was
+-- Blizzard's party leader icon on the player frame (PlayerFrameContentContextual.LeaderIcon,
+-- found by a frame trace), peeking out under the icon row. Kept invisible with alpha so
+-- Blizzard's own Show/Hide still runs untouched.
+do
+	local function HideLeader()
+		local ctx = PlayerFrame and PlayerFrame.PlayerFrameContent and PlayerFrame.PlayerFrameContent.PlayerFrameContentContextual
+		local icon = ctx and ctx.LeaderIcon
+		if not icon then return end
+		if DenoDotsDB then DenoDotsDB.lineTrace = nil end   -- the trace that found it
+		icon:SetAlpha(0)
+		if not icon.denoDotsHooked then
+			icon.denoDotsHooked = true
+			hooksecurefunc(icon, "SetAlpha", function(self, a)
+				if a ~= 0 then self:SetAlpha(0) end
+			end)
+		end
+	end
+	local leaderFrame = CreateFrame("Frame")
+	leaderFrame:RegisterEvent("PLAYER_LOGIN")
+	leaderFrame:SetScript("OnEvent", HideLeader)
 end
