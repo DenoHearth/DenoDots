@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.8.2 — 2026-11-17
+
+- Warlock: new default icon Demonic Brand (the Demonology talent's brand that Searing Pain puts on your target). Shows once you have the talent; existing warlock lists get it added once, at the end. Asked for on CurseForge.
+- A learned passive talent now counts as known for an icon.
+
 ## v1.8.1 — 2026-11-11
 
 - The tiny yellow line under the icon row is gone: it was the game's party leader icon on the player frame peeking out under the row. It is now kept invisible; the game still shows and hides it as before

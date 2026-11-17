@@ -56,6 +56,10 @@ local CLASS_DEFAULTS = {
 		{ label = "Curse", kind = "dot", spells = { "curse of the elements", "curse of weakness",
 			"curse of recklessness", "curse of tongues", "curse of exhaustion", "curse of idiocy" } },
 		{ label = "Armor", kind = "reminder", spells = { "demon skin", "demon armor", "fel armor" } },
+		-- 1.8.2 (asked for on CurseForge, 2026-11-17): the Demonology talent's brand that Searing
+		-- Pain puts on the target. The talent ranks and the brand share one name; the ids come
+		-- from the client's own spell data (build 70374). Shows only for a warlock with the talent.
+		{ label = "Demonic Brand", kind = "debuff", spells = { 1293695, 1293696, 1293697, 1293698, 1293699 } },
 	},
 	-- 1.5.0 (his ask, 2026-11-10, after the mock-up: "build it with better glows"). On Forever
 	-- Judgement no longer uses up the Seal and its debuff lasts 40 s, so the Seal, the
@@ -203,7 +207,8 @@ end
 -- One of the ids the character knows, or nil.
 function ns.KnownSpell(ids)
 	for id in pairs(ids) do
-		if C_SpellBook.IsSpellKnown(id) then return id end
+		-- IsPlayerSpell also counts passive talents (Demonic Brand), which the spell book may not list
+		if C_SpellBook.IsSpellKnown(id) or (IsPlayerSpell and IsPlayerSpell(id)) then return id end
 	end
 end
 
@@ -246,6 +251,23 @@ local function SelectClass()
 					if track.bar == nil and track.label == default.label and track.kind == default.kind then
 						track.bar = default.bar
 					end
+				end
+			end
+		end
+	end
+	-- 1.8.2, once: a list saved before a new default existed gets that default added at the end
+	if not saved.brand182 then
+		saved.brand182 = true
+		for _, default in ipairs(CLASS_DEFAULTS[class] or {}) do
+			if default.label == "Demonic Brand" then
+				local have = false
+				for _, track in ipairs(saved.tracks) do
+					if track.label == default.label then have = true end
+				end
+				if not have then
+					local spells = {}
+					for index, spell in ipairs(default.spells) do spells[index] = spell end
+					saved.tracks[#saved.tracks + 1] = ns.NewTrack(default.label, default.kind, spells)
 				end
 			end
 		end
