@@ -370,21 +370,26 @@ end
 -- Blizzard's party leader icon on the player frame (PlayerFrameContentContextual.LeaderIcon,
 -- found by a frame trace), peeking out under the icon row. Kept invisible with alpha so
 -- Blizzard's own Show/Hide still runs untouched.
+-- 1.8.3 (his ask, 2026-11-23: "doesnt show the leader crown on myself"): hiding it lost the
+-- crown. Now the crown (and the dungeon-finder guide icon in the same spot) moves out from under
+-- the row onto the portrait ring's top-left rim, where the row never sits. Blizzard anchors
+-- these two only in XML, so moving them once at login holds.
 do
-	local function HideLeader()
+	local function MoveLeader()
 		local ctx = PlayerFrame and PlayerFrame.PlayerFrameContent and PlayerFrame.PlayerFrameContent.PlayerFrameContentContextual
-		local icon = ctx and ctx.LeaderIcon
-		if not icon then return end
+		local container = PlayerFrame and PlayerFrame.PlayerFrameContainer
+		local portrait = container and container.PlayerPortrait
+		if not ctx or not portrait then return end
 		if DenoDotsDB then DenoDotsDB.lineTrace = nil end   -- the trace that found it
-		icon:SetAlpha(0)
-		if not icon.denoDotsHooked then
-			icon.denoDotsHooked = true
-			hooksecurefunc(icon, "SetAlpha", function(self, a)
-				if a ~= 0 then self:SetAlpha(0) end
-			end)
+		for _, key in ipairs({ "LeaderIcon", "GuideIcon" }) do
+			local icon = ctx[key]
+			if icon then
+				icon:ClearAllPoints()
+				icon:SetPoint("CENTER", portrait, "TOPLEFT", 7, -7)
+			end
 		end
 	end
 	local leaderFrame = CreateFrame("Frame")
 	leaderFrame:RegisterEvent("PLAYER_LOGIN")
-	leaderFrame:SetScript("OnEvent", HideLeader)
+	leaderFrame:SetScript("OnEvent", MoveLeader)
 end

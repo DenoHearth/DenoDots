@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.8.3 — 2026-11-23
+
+- The party leader crown on your own player frame is back. It now sits on the top-left of the portrait ring instead of under the icon row (1.8.1 had hidden it).
+
 ## v1.8.2 — 2026-11-17
 
 - Warlock: new default icon Demonic Brand (the Demonology talent's brand that Searing Pain puts on your target). Shows once you have the talent; existing warlock lists get it added once, at the end. Asked for on CurseForge.
